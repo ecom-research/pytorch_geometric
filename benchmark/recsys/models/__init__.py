@@ -1,9 +1,11 @@
-from .gat import KGGATNet
 from .gcn import GCN
+from .gat import GAT
 from .pagagcn import PAGAGCN
+from .nmf import NMF
 
 __all__ = [
-    'KGGATNet',
     'GCN',
-    'PAGAGCN'
+    'GAT',
+    'PAGAGCN',
+    'NMF'
 ]

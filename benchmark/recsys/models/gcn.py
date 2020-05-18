@@ -4,20 +4,31 @@ from torch_geometric.nn import GCNConv
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, num_nodes, emb_dim, hidden_size, repr_dim, dropout):
+    def __init__(self, num_nodes, emb_dim, hidden_size, repr_dim, if_use_features, dropout):
         super(GCN, self).__init__()
         self.num_nodes = num_nodes
+        self.if_use_features = if_use_features
         self.dropout = dropout
+
+        if not self.if_use_features:
+            self.x = torch.nn.Embedding(num_nodes, emb_dim, max_norm=1)
 
         self.conv1 = GCNConv(emb_dim, hidden_size)
         self.conv2 = GCNConv(hidden_size, repr_dim)
 
+        self.reset_parameters()
+
     def reset_parameters(self):
+        if not self.if_use_features:
+            torch.nn.init.normal_(self.x.weight, -1.0, 1.0)
         self.conv1.reset_parameters()
         self.conv2.reset_parameters()
 
-    def forward(self, x, edge_index):
+    def forward(self, edge_index, x=None):
+        if not self.if_use_features:
+            x = self.x.weight
         x = F.relu(self.conv1(x, edge_index))
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.conv2(x, edge_index)
+        x = F.normalize(x)
         return x

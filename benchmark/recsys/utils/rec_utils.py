@@ -1,59 +1,38 @@
 import numpy as np
-import torch
-import tqdm
-import pandas as pd
+from sklearn.metrics import ndcg_score
+from itertools import product
+
+NUM_RECS_RANGE = 20
 
 
-def hit(hit_vec):
-    if hit_vec.sum() > 0:
-        return 1
-    else:
-        return 0
+def hit(hit_vec_np):
+    HRatK = []
+    for num_recs in range(5, NUM_RECS_RANGE + 1):
+        if np.sum(hit_vec_np[: num_recs]) > 0:
+            HRatK.append(1)
+        else:
+            HRatK.append(0)
+
+    return HRatK
 
 
-def ndcg(hit_vec):
-    ndcg_vec = [np.reciprocal(np.log2(idx+2)) for idx, if_hit in enumerate(hit_vec.cpu().numpy()) if if_hit]
-    return np.sum(ndcg_vec)
+def ndcg(hit_vec_np):
+    NDCGatK = []
+    for num_recs in range(5, NUM_RECS_RANGE + 1):
+        hit_vec_atK_np = np.array(hit_vec_np[: num_recs], dtype=np.int)
+        hit_vec_atK_np = hit_vec_atK_np.reshape(1, -1)
+        NDCGatK.append(
+            ndcg_score(
+                hit_vec_atK_np,
+                np.ones_like(hit_vec_atK_np)
+            )
+        )
+
+    return NDCGatK
 
 
-def metrics(
-        epoch,
-        propagated_node_emb,
-        test_pos_unid_inid_map, neg_unid_inid_map,
-        rec_args):
-    HR, NDCG, losses = [], [], []
+def auc(preds_pos, preds_neg):
+    product_comp = [1 if p_pred > n_pred else 0 for p_pred, n_pred in product(preds_pos, preds_neg)]
+    return np.mean(product_comp)
 
-    u_nids = list(test_pos_unid_inid_map.keys())
-    test_bar = tqdm.tqdm(u_nids, total=len(u_nids))
-    for u_idx, u_nid in enumerate(test_bar):
-        pos_i_nids = test_pos_unid_inid_map[u_nid]
-        neg_i_nids = neg_unid_inid_map[u_nid]
-        if len(pos_i_nids) == 0 or len(neg_i_nids) == 0:
-            continue
-        pos_i_nid_df = pd.DataFrame({'u_nid': [u_nid for _ in range(len(pos_i_nids))], 'pos_i_nid': pos_i_nids})
-        neg_i_nid_df = pd.DataFrame({'u_nid': [u_nid for _ in range(len(neg_i_nids))], 'neg_i_nid': neg_i_nids})
-        pos_neg_pair_np = pd.merge(pos_i_nid_df, neg_i_nid_df, how='inner', on='u_nid').to_numpy()
 
-        u_node_emb = propagated_node_emb[pos_neg_pair_np[:, 0]]
-        pos_i_node_emb = propagated_node_emb[pos_neg_pair_np[:, 1]]
-        neg_i_node_emb = propagated_node_emb[pos_neg_pair_np[:, 2]]
-        pred_pos = (u_node_emb * pos_i_node_emb).sum(dim=1)
-        pred_neg = (u_node_emb * neg_i_node_emb).sum(dim=1)
-
-        loss = - (pred_pos - pred_neg).sigmoid().log().mean().item()
-
-        u_node_emb = propagated_node_emb[u_nid]
-        pos_i_node_emb = propagated_node_emb[pos_i_nids]
-        neg_i_node_emb = propagated_node_emb[neg_i_nids]
-        pred_pos = (u_node_emb * pos_i_node_emb).sum(dim=1)
-        pred_neg = (u_node_emb * neg_i_node_emb).sum(dim=1)
-
-        _, indices = torch.topk(torch.cat([pred_pos, pred_neg]), rec_args['num_recs'])
-        hit_vec = indices < len(pos_i_nids)
-
-        HR.append(hit(hit_vec))
-        NDCG.append(ndcg(hit_vec))
-        losses.append(loss)
-        test_bar.set_description('Epoch: {:.4f} loss: {:.4f} HR: {:.4f} NDCG: {:.4f}'.format(epoch, np.mean(losses), np.mean(HR), np.mean(NDCG)))
-
-    return np.mean(HR), np.mean(NDCG), np.mean(losses)
